@@ -184,7 +184,12 @@ def test_orchestrator_confirmation_flow(tmp_path):
         task_timeout_seconds=5,
         step_timeout_seconds=2,
         sse_heartbeat_seconds=1,
-        openai_model="test-model",
+        anthropic_api_key="test-api-key",
+        anthropic_model="test-model",
+        anthropic_base_url=None,
+        anthropic_max_output_tokens=256,
+        openai_api_key="test-openai-key",
+        openai_base_url=None,
         embedding_model="test-emb",
         allow_domains=[],
     )

@@ -45,7 +45,7 @@ from autobrowser.core.schemas import (
     TaskLogEvent,
     TaskStatus,
 )
-from autobrowser.llm.provider import OpenAIProvider
+from autobrowser.llm.provider import AnthropicProvider
 from autobrowser.storage.files import FileStorage
 
 
@@ -64,7 +64,7 @@ class TaskOrchestrator:
         self,
         settings: Optional["Settings"] = None,
         *,
-        llm: Optional[OpenAIProvider] = None,
+        llm: Optional[AnthropicProvider] = None,
         browser_manager: Optional[BrowserManager] = None,
         browser_tools: Optional[BrowserToolExecutor] = None,
         reader: Optional[PageReader] = None,
@@ -89,7 +89,7 @@ class TaskOrchestrator:
         self._executor = ThreadPoolExecutor(max_workers=self._settings.max_concurrent_tasks)
 
         # Core components
-        self._llm = llm or OpenAIProvider(self._settings)
+        self._llm = llm or AnthropicProvider(self._settings)
         self._browser_manager = browser_manager or BrowserManager(self._settings)
         self._browser_tools = browser_tools or BrowserToolExecutor(self._settings.artifacts_dir)
         self._reader = reader or PageReader()

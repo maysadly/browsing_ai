@@ -8,7 +8,7 @@ from urllib.parse import quote_plus
 from loguru import logger
 
 from autobrowser.core.schemas import Action, Affordance, PageFormField, PageStatePack, Task
-from autobrowser.llm.provider import OpenAIProvider
+from autobrowser.llm.provider import AnthropicProvider
 
 
 class PlannerAgent:
@@ -21,7 +21,7 @@ class PlannerAgent:
         "click": ["locator_or_text"],
     }
 
-    def __init__(self, llm: OpenAIProvider) -> None:
+    def __init__(self, llm: AnthropicProvider) -> None:
         self._llm = llm
         self._system_prompt = llm.prompt_registry.load("planner.system.txt")
         self._missing_action_prompt = (

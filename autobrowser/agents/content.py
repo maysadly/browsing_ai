@@ -5,13 +5,13 @@ from typing import List
 from loguru import logger
 
 from autobrowser.core.schemas import PageEntity, Task
-from autobrowser.llm.provider import OpenAIProvider
+from autobrowser.llm.provider import AnthropicProvider
 
 
 class ContentAgent:
     """Generates concise summaries and final reports."""
 
-    def __init__(self, llm: OpenAIProvider) -> None:
+    def __init__(self, llm: AnthropicProvider) -> None:
         self._llm = llm
         self._system_prompt = llm.prompt_registry.load("writer.system.txt")
 

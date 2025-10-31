@@ -129,6 +129,10 @@ class EmbeddingClient:
         if OpenAI is None:
             raise RuntimeError("openai package is required for embeddings")
         self._settings = settings or get_settings()
+        if not self._settings.openai_api_key:
+            raise RuntimeError(
+                "OPENAI_API_KEY must be provided to compute embeddings (used with the OpenAI Embeddings API)."
+            )
         self._client = OpenAI(
             api_key=self._settings.openai_api_key,
             base_url=self._settings.openai_base_url,

@@ -2,6 +2,7 @@ Flask>=3.0
 jinja2>=3.1
 playwright>=1.44
 openai>=1.37
+anthropic>=0.25
 httpx>=0.27
 requests>=2.32
 tenacity>=8.2

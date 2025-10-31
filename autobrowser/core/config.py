@@ -20,8 +20,11 @@ class Settings(BaseSettings):
         frozen=True,
     )
 
-    openai_api_key: str = Field(alias="OPENAI_API_KEY")
-    openai_model: str = Field(default="gpt-4o-mini", alias="OPENAI_MODEL")
+    anthropic_api_key: str = Field(alias="ANTHROPIC_API_KEY")
+    anthropic_model: str = Field(default="claude-3-haiku-20240307", alias="ANTHROPIC_MODEL")
+    anthropic_base_url: Optional[str] = Field(default=None, alias="ANTHROPIC_BASE_URL")
+    anthropic_max_output_tokens: int = Field(default=1024, alias="ANTHROPIC_MAX_TOKENS")
+    openai_api_key: Optional[str] = Field(default=None, alias="OPENAI_API_KEY")
     openai_base_url: Optional[str] = Field(default=None, alias="OPENAI_BASE_URL")
     embedding_model: str = Field(default="text-embedding-3-small", alias="EMBEDDING_MODEL")
     session_dir: Path = Field(default=Path("storage/sessions/default"), alias="SESSION_DIR")

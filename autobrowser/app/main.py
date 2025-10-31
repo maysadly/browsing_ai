@@ -42,7 +42,7 @@ def create_app(settings: Optional["Settings"] = None) -> Flask:
         return render_template(
             "index.html",
             config={
-                "model": settings.openai_model,
+                "model": settings.anthropic_model,
                 "tokenBudget": settings.token_budget,
                 "maxSteps": settings.max_steps,
             },
@@ -51,7 +51,7 @@ def create_app(settings: Optional["Settings"] = None) -> Flask:
     @app.route("/api/config", methods=["GET"])
     def api_config():
         payload = {
-            "model": settings.openai_model,
+            "model": settings.anthropic_model,
             "embedding_model": settings.embedding_model,
             "token_budget": settings.token_budget,
             "max_steps": settings.max_steps,

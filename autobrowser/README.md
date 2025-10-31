@@ -1,10 +1,10 @@
 # Autobrowser
 
-Autobrowser is a Flask-based control plane for a headful Playwright agent that plans, navigates, extracts, and reports on multi-step browsing tasks with OpenAI models. It keeps long-lived browser sessions, stores artefacts, streams live logs, and pauses for confirmation before risky actions.
+Autobrowser is a Flask-based control plane for a headful Playwright agent that plans, navigates, extracts, and reports on multi-step browsing tasks with Anthropic Claude models (and OpenAI embeddings). It keeps long-lived browser sessions, stores artefacts, streams live logs, and pauses for confirmation before risky actions.
 
 ## Features
 
-- ReAct-style planner with OpenAI tool calling and modular researcher/extractor/content agents
+- ReAct-style planner with Anthropic tool calling and modular researcher/extractor/content agents
 - Persistent Chromium context launched via Playwright `launch_persistent_context` in headful mode
 - Short-term windowed memory plus FAISS-backed long-term retrieval for compact LLM prompts
 - Safety layer with risk classification and confirmation gate surfaced in the UI
@@ -18,7 +18,8 @@ Autobrowser is a Flask-based control plane for a headful Playwright agent that p
 
 - Python 3.11+
 - Node/npm not required (vanilla JS frontend)
-- OpenAI API key with access to the configured model
+- Anthropic API key (Claude models with tool calling)
+- OpenAI API key for embeddings (text-embedding-3-small by default)
 
 ### Local Environment
 
@@ -39,7 +40,8 @@ The UI will be available at http://localhost:5000.
 ```bash
 docker build -t autobrowser .
 docker run --rm -p 8000:8000 \
-  -e OPENAI_API_KEY=sk-your-key \
+  -e ANTHROPIC_API_KEY=sk-your-claude-key \
+  -e OPENAI_API_KEY=sk-your-openai-key \
   autobrowser
 ```
 
@@ -82,7 +84,7 @@ Stream logs via SSE (requires an SSE-capable client) or fall back to the web UI.
 - Prompts live under `autobrowser/llm/prompts` and should remain concise to respect the token budget.
 - Artefacts (screenshots, JSON) are stored under `storage/artifacts/<task_id>/`.
 - Browser sessions persist in `storage/sessions/<task_id>/` to keep state between steps.
-- Update `.env` to switch default models or tune token/step budgets.
+- Update `.env` to switch Anthropic/OpenAI models or tune token/step budgets.
 
 ## Testing
 

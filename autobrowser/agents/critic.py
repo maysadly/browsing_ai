@@ -5,13 +5,13 @@ from typing import List, Optional
 from loguru import logger
 
 from autobrowser.core.schemas import Observation, Task
-from autobrowser.llm.provider import OpenAIProvider
+from autobrowser.llm.provider import AnthropicProvider
 
 
 class CriticAgent:
     """Analyses failures and proposes recovery steps."""
 
-    def __init__(self, llm: OpenAIProvider) -> None:
+    def __init__(self, llm: AnthropicProvider) -> None:
         self._llm = llm
         self._system_prompt = llm.prompt_registry.load("critic.system.txt")
 
