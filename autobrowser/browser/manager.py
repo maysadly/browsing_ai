@@ -4,8 +4,20 @@ from pathlib import Path
 from threading import Lock
 from typing import Any, Dict, Optional, Tuple, TYPE_CHECKING
 
-from loguru import logger
-from playwright.sync_api import BrowserContext, sync_playwright
+try:
+    from loguru import logger
+except ModuleNotFoundError:  # pragma: no cover
+    import logging
+
+    logger = logging.getLogger("autobrowser.manager")
+
+try:
+    from playwright.sync_api import BrowserContext, sync_playwright
+except ImportError:  # pragma: no cover
+    BrowserContext = Any  # type: ignore[assignment]
+
+    def sync_playwright():  # type: ignore[override]
+        raise RuntimeError("playwright is required to use BrowserManager")
 
 if TYPE_CHECKING:  # pragma: no cover
     from autobrowser.core.config import Settings
@@ -76,10 +88,24 @@ class BrowserManager:
         return page
 
     def close_task(self, task_id: str) -> None:
+        handle: Optional[Tuple[Any, BrowserContext]] = None
         with self._lock:
-            context = self._contexts.pop(task_id, None)
-            if context:
-                context.close()
+            handle = self._handles.pop(task_id, None)
+
+        if handle is None:
+            logger.debug("No browser context to close", task_id=task_id)
+            return
+
+        playwright, context = handle
+        try:
+            context.close()
+        except Exception:  # noqa: BLE001
+            logger.exception("Failed to close browser context", task_id=task_id)
+        finally:
+            try:
+                playwright.stop()
+            except Exception:  # noqa: BLE001
+                logger.exception("Failed to stop Playwright runner", task_id=task_id)
         logger.info("Context closed", task_id=task_id)
 
     def shutdown(self) -> None:

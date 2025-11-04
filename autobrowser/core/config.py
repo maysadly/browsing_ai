@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from functools import lru_cache
 from pathlib import Path
 from typing import List, Optional
 
@@ -28,16 +29,24 @@ class Settings(BaseSettings):
     artifacts_dir: Path = Field(default=Path("storage/artifacts"), alias="ARTIFACTS_DIR")
     logs_dir: Path = Field(default=Path("storage/logs"), alias="LOGS_DIR")
     allow_domains: List[str] = Field(default_factory=list, alias="ALLOW_DOMAINS")
+    max_clicks_per_second: int = Field(default=5, alias="MAX_CLICKS_PER_SECOND")
     token_budget: int = Field(default=3500, alias="TOKENS_BUDGET")
     max_steps: int = Field(default=40, alias="MAX_STEPS")
     max_concurrent_tasks: int = Field(default=2, alias="MAX_CONCURRENT_TASKS")
     task_timeout_seconds: int = Field(default=1800, alias="TASK_TIMEOUT_SECONDS")
     step_timeout_seconds: int = Field(default=120, alias="STEP_TIMEOUT_SECONDS")
     sse_heartbeat_seconds: int = Field(default=10, alias="SSE_HEARTBEAT_SECONDS")
+    persist_context_on_failure: bool = Field(
+        default=True,
+        alias="PERSIST_CONTEXT_ON_FAILURE",
+    )
 
     @field_validator("session_dir", "artifacts_dir", "logs_dir", mode="before")
     def _expand_path(cls, value: Path | str) -> Path:
-        return Path(value).expanduser().resolve()
+        path = Path(value).expanduser()
+        if not path.is_absolute():
+            path = _BASE_DIR / path
+        return path.resolve()
 
     @field_validator("allow_domains", mode="before")
     def _split_domains(cls, value: str | list[str] | None) -> list[str]:
@@ -48,6 +57,7 @@ class Settings(BaseSettings):
         return value
 
 
+@lru_cache(maxsize=1)
 def get_settings() -> Settings:
     """Load settings once and reuse (singleton style)."""
 
