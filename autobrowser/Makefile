@@ -1,6 +1,6 @@
 PYTHON?=python3
 
-.PHONY: install run test lint fmt playwright
+.PHONY: install run test lint fmt playwright eval-webarena eval-mind2web eval-summary
 
 install:
 	$(PYTHON) -m pip install --upgrade pip
@@ -22,3 +22,12 @@ fmt:
 
 playwright:
 	bash scripts/setup_playwright.sh
+
+eval-webarena:
+	pytest autobrowser/tests/eval/test_webarena.py -m webarena -vv
+
+eval-mind2web:
+	pytest autobrowser/tests/eval/test_mind2web.py -m mind2web -vv
+
+eval-summary:
+	$(PYTHON) scripts/eval_summary.py --log storage/logs/autobrowser.jsonl

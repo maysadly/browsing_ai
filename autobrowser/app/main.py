@@ -103,7 +103,8 @@ def create_app(settings: Optional["Settings"] = None) -> Flask:
     def confirm_action(task_id: str):
         body = request.get_json(force=True)
         approve = bool(body.get("approve"))
-        ok = orchestrator.confirm_task_action(task_id, approve)
+        payload = body.get("payload") or body.get("data") or None
+        ok = orchestrator.confirm_task_action(task_id, approve, payload=payload)
         return jsonify({"ack": ok})
 
     @app.route("/artifacts/<path:filename>", methods=["GET"])

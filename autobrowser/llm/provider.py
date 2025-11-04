@@ -11,8 +11,6 @@ except ImportError:  # pragma: no cover
 from tenacity import retry, stop_after_attempt, wait_exponential
 from loguru import logger
 
-from typing import TYPE_CHECKING
-
 if TYPE_CHECKING:  # pragma: no cover
     from autobrowser.core.config import Settings
 else:

@@ -1,103 +1,107 @@
 # Autobrowser
 
-Autobrowser is a Flask-based control plane for a headful Playwright agent that plans, navigates, extracts, and reports on multi-step browsing tasks with OpenAI models. It keeps long-lived browser sessions, stores artefacts, streams live logs, and pauses for confirmation before risky actions.
+Когда я начал собирать этот проект, хотелось построить не просто очередной скрипт для Playwright, а небольшую лабораторию, в которой можно наблюдать, как язык моделей постепенно учится жить в реальном браузере. Ниже — рассказ о том, что получилось, что еще не дотянуто до идеала и как всем этим пользоваться.
 
-## Features
+## Что это за система
 
-- ReAct-style planner with OpenAI tool calling and modular researcher/extractor/content agents
-- Persistent Chromium context launched via Playwright `launch_persistent_context` in headful mode
-- Short-term windowed memory plus FAISS-backed long-term retrieval for compact LLM prompts
-- Safety layer with risk classification and confirmation gate surfaced in the UI
-- Flask UI with Server-Sent Events for live logs, screenshot previews, and risk confirmations
-- JSON artefact logging, screenshot preservation, and task queue with concurrency limits
-- Pytest suite with high-level orchestration tests using mock browser/LLM components
+Autobrowser — это управляемая среда для headful-экземпляра Chromium, которую курирует Flask-приложение. Внутри работает стратегический агент: он читает сжатое представление страницы, запрашивает у LLM следующий шаг и отдает команду набору инструментов (клик, ввод текста, навигация, прокрутка, извлечение данных). Сессии браузера живут долго, поэтому после ручного входа в аккаунт агент может продолжать уже в авторизованном контексте. Каждая итерация оставляет след: скриншоты, JSON-логи, diff DOM, что помогает разбирать полеты, когда что-то идет не так.
 
-## Getting Started
+## Архитектура в нескольких абзацах
 
-### Prerequisites
+В основе — `TaskOrchestrator`, который принимает текстовую задачу и запускает цикл наблюдение → план → действие → оценка. Планировщик (`StrategyAgent`) не просто выдает очередную кнопку для клика: он следит за рабочим состоянием (понял ли пользователь, что пора залогиниться, читал ли профиль, сколько откликов уже отправлено) и, если нужно, ставит процесс «на паузу» через `confirm_gate`.  
+  
+За распознавание интерактивных элементов отвечает `PageReader`: он сканирует DOM, достает affordances, формы, текстовые фрагменты, отмечает на скриншоте самые важные узлы. Чтобы LLM не тонула в токенах, используется короткая история действий и долговременная память на FAISS — туда попадают промежуточные страницы, а затем из нее вытягиваются релевантные фрагменты.  
+  
+Отдельный пласт — `HeuristicStore`. Каждый раз, когда агент находит рабочий селектор (скажем, поле поиска на hh.ru), он сохраняет его в JSON. В следующий визит стратег уже подсказывает LLM «попробуй здесь, мы видели это раньше», что заметно снижает количество случайных кликов.
 
-- Python 3.11+
-- Node/npm not required (vanilla JS frontend)
-- OpenAI API key with access to the configured model
+## Как поднять окружение
 
-### Local Environment
+Мне комфортно работать локально:  
+1. Создать виртуальное окружение `python -m venv .venv && source .venv/bin/activate`.  
+2. Установить зависимости `pip install -r requirements.txt`.  
+3. Скопировать переменные `cp .env.example .env` и прописать ключ OpenAI (или Anthropic, если адаптируете промпты).  
+4. Установить браузеры `playwright install` либо `make playwright`.  
+5. Прогреть Flask-приложение командой `make run`. Интерфейс откроется на http://localhost:5000, а рядом появится Chromium с сохранением профиля в `storage/sessions/`.
 
-```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env
-export $(grep -v '^#' .env | xargs)
-bash scripts/setup_playwright.sh
-make run
-```
+Если нужен Docker, достаточно собрать образ `docker build -t autobrowser .` и запустить контейнер, прокинув API-ключ и X-сервер/VNC. Важно помнить, что режим headful подразумевает наличие окна — без графической подсистемы агент будет слеп.
 
-The UI will be available at http://localhost:5000.
+## Как пользоваться
 
-### Docker
+В верхнем правом углу веб-интерфейса есть форма постановки задачи. Пишете, например: «Зайди на hh.ru, попроси меня авторизоваться, а потом найди три вакансии AI-инженера и подготовь резюме для отклика». Оркестратор добавит задачу в очередь, на панели появятся лог-строки и скриншоты. Если стратег решит, что шаг потенциально рискованный (ввод пароля, подтверждение покупки), он сгенерирует `confirm_gate`: система остановится и предложит пользователю принять решение.
 
-```bash
-docker build -t autobrowser .
-docker run --rm -p 8000:8000 \
-  -e OPENAI_API_KEY=sk-your-key \
-  autobrowser
-```
+Вся телеметрия уходит в `storage/logs/autobrowser.jsonl`, а скриншоты лежат в `storage/artifacts/<task_id>/`. Это удобно, когда нужно расследовать, почему агент застрял — можно пролистать последовательность шагов и сопоставить их с промптом, который LLM видела на каждом повороте.
 
-> **Note:** Playwright runs in headful mode, so when running inside Docker ensure an X server or VNC is available if you need to observe the browser window.
+## Работа с кодовой базой
 
-## Make Targets
+Почти весь функционал завязан на Makefile: `make install` тянет зависимости, `make lint` и `make fmt` прогоняют Ruff, `make test` выполняет pytest. Тесты легковесные: мы используем стабы LLM и браузера, поэтому их можно гонять без сети и без Playwright, если не планируете запускать интеграции.  
+  
+Промпты лежат в `autobrowser/llm/prompts`. Они короткие и построены на ReAct-паттерне: сначала напомнить модели о цели и текущем состоянии, затем попросить сформулировать одно действие. Любые правки этих файлов лучше сопровождать тестовым прогоном — даже мелкая перестановка фраз может поменять стиль действий.
 
-- `make install` – install Python dependencies
-- `make run` – start the Flask development server
-- `make test` – execute the pytest suite
-- `make lint` – run Ruff static analysis
-- `make fmt` – format the codebase with Ruff
-- `make playwright` – install Playwright browsers
+## Ограничения и наблюдения
 
-## API
+Я сознательно оставил систему гибкой, чтобы легко добавлять специализированных агентов. Сейчас основной стратег умеет планировать, но иногда повторяет одни и те же шаги; для сложных сценариев пригодился бы «служба навигации» с отдельными правилами либо видимый memory board для LLM.  
+  
+Работа с формами пока частично эвристическая: мы запоминаем удачные селекторы, но не умеем анализировать сложные модальные окна. Поэтому на незнакомых сайтах агент может тратить время на бесполезные клики.  
+  
+Главная трудность, с которой я столкнулся, — баланс между свободой модели и предсказуемостью. Чем больше ограничений вводишь, тем стабильнее поведение, но тем ближе система к жестко прошитым скриптам. Мне хотелось сохранить ощущение «живого» исследования, поэтому часть хаоса пока допускается.
 
-| Method | Endpoint | Description |
-| ------ | -------- | ----------- |
-| `GET` | `/` | Control panel UI |
-| `GET` | `/api/config` | Inspect runtime configuration |
-| `GET` | `/api/tasks` | List known tasks |
-| `POST` | `/api/tasks` | Create a new task (`{ goal, allow_high_risk }`) |
-| `GET` | `/api/tasks/<id>` | Fetch task status and recent logs |
-| `GET` | `/api/tasks/<id>/events` | Server-sent events stream of task updates |
-| `POST` | `/api/tasks/<id>/confirm` | Approve or reject a pending high-risk action |
-| `GET` | `/artifacts/<path>` | Serve captured artefacts (screenshots, JSON) |
+## Куда двигаться дальше
 
-### Example: Launch Task
+Я бы добавил визуальную аналитическую панель, чтобы в реальном времени видеть промпты, ответы LLM и выдержки из памяти. Еще хочется расширить библиотеку эвристик: хранить не только селекторы, но и «рецепты» (например, «после логина нажми профиль справа сверху»). Наконец, звучит заманчиво подключить мультимодальные модели и подсвечивать им скриншоты — тогда планировщик не зависел бы только от текстовой верстки.
 
-```bash
-curl -X POST http://localhost:5000/api/tasks \
-  -H "Content-Type: application/json" \
-  -d '{"goal": "Open a public site, search for playwright, grab first result", "allow_high_risk": false}'
-```
+Если вы берете этот проект как исходную точку, попробуйте начать с собственного сценария: дайте агенту задачу, понаблюдайте за записями в логах и скриншотами, а затем подправьте стратегию так, чтобы он меньше спрашивал и чаще доводил дело до конца. Именно этот цикл — постановка задачи, наблюдение, корректировка — и был основной идеей при разработке Autobrowser.
 
-Stream logs via SSE (requires an SSE-capable client) or fall back to the web UI.
+## Как я использовал AI-инструменты
 
-## Development Notes
+Работал в VS Code с включенным GitHub Copilot. Он отлично справлялся с рутинными вставками: помогал вспоминать сигнатуры Playwright, подсказал лаконичные конструкции с `dataclass`, ускорял написание промптов. Каждый предложенный фрагмент приходилось проверять на предмет безопасности и соответствия общей архитектуре — шаблоны вроде конкретно заданных жестких эвристик и другие не эффективные решения сразу отправлял в корзину.  
 
-- Prompts live under `autobrowser/llm/prompts` and should remain concise to respect the token budget.
-- Artefacts (screenshots, JSON) are stored under `storage/artifacts/<task_id>/`.
-- Browser sessions persist in `storage/sessions/<task_id>/` to keep state between steps.
-- Update `.env` to switch default models or tune token/step budgets.
+Чтобы оставаться в рамках хороших практик, держал несколько правил:
+- любые автогенерированные куски проходили через тесты и линтер (`pytest`, `ruff`);
+- промпты формулировал коротко и однозначно, чтобы у модели было меньше простора для «творчества»;
+- ключевые решения фиксировал комментариями и в этом README, чтобы не превращать проект в набор магии «из ниоткуда».
 
-## Testing
+В результате Copilot стал скорее ускорителем — он помогал быстрее набрасывать рабочий код, но финальная ответственность за дизайн системы и соблюдение требований ТЗ полностью на мне.
 
-Run the full suite:
+## Как я закрывал требования из ТЗ
 
-```bash
-make test
-```
+Чтобы было проще сверить результат с ожиданиями, разобрал основные пункты задания и пояснил, что конкретно реализовано.
 
-The tests use lightweight fakes for the browser and LLM layers, so they can run without network access or Playwright binaries.
+### Автоматизация браузера
 
-## Demo Scenario
+- **Программное управление браузером** — ядро построено на Playwright (см. `autobrowser/browser/manager.py` и `autobrowser/browser/tools.py`). Все действия (`navigate`, `click`, `type`, `wait`, `scroll`, `extract`, `confirm_gate`) идут через единый исполнитель `BrowserToolExecutor`, который открывает реальные страницы и управляет Locator-ами Playwright.
+- **Persistent sessions** — браузер стартует через `launch_persistent_context`, а профили складываются в `storage/sessions/<task_id>/`. Если пользователь вручную вводит логин/пароль и подтверждает `confirm_gate`, стратег повторно использует ту же страницу без переоткрытия.
+- **Headful режим** — в отличие от headless-режима, Chromium запускается c UI (параметр `headless=False`). В README явно предупреждаю, что внутри Docker потребуется дисплей или VNC.
 
-A good end-to-end scenario to try from the UI:
+### Автономный AI-агент
 
-> “Open a public site, perform a search for ‘playwright’, follow the first relevant result, capture the page’s heading and leading paragraph, and produce a 100-word summary. Do not approve high risk actions.”
+- **Использование LLM** — `StrategyAgent` опирается на OpenAI (класс `OpenAIProvider`). Там же можно переключиться на Anthropic, если заменить провайдера и промпты.
+- **Решения без пользователя** — основная петля решает всё сама: считывает состояние страницы, формирует план, выполняет действия и анализирует результат. Пользователь вмешивается только если агент явно запрашивает подтверждение (`confirm_gate`) или если задача требует внешней информации.
+- **Многошаговые задачи** — стратег видит текущий план, историю, память и может идти через несколько страниц, возвращаться назад, исправлять действия. План состоит из пунктов, которые агент отмечает `[step-complete]`, когда считает, что шаг выполнен.
 
-This showcases planning, navigation, extraction, summarisation, logging, and confirmation gates.
+### Управление контекстом
+
+- **Экономия токенов** — `PageReader` агрегирует не всю страницу, а лишь наиболее значимые куски: список affordance-элементов, формы, текстовые отрывки, diff DOM (в `autobrowser/browser/reader.py`). Дополнительно есть короткая краткосрочная память и выборка из FAISS-индекса, что позволяет держать промпт компактным.
+- **Планирование под бюджет** — `TaskContext` знает, сколько токенов осталось и сколько шагов можно сделать. Стратег при каждом запросе вызывает `count_tokens` и обновляет бюджет, а оркестратор при необходимости завершает задачу или уводит её в повторный запуск.
+
+### Продвинутые паттерны
+
+- **Sub-agent architecture** — помимо стратегического агента есть `Navigator` (оценивает релевантность affordances), `ExecutorAgent` (отвечает за повторные попытки и фиксацию провалов), `ExtractorAgent` (готовит сущности для отчетов). Такой разделенный слой позволяет постепенно усиливать каждый компонент.
+- **Обработка ошибок** — каждое действие обернуто в `BrowserToolExecutor`. Если возникает `Timeout`, `NotFound` или произвольное исключение, в лог пишется предупреждение, стратег получает заметку и может попробовать альтернативу. Часто агент использует `Strategy.suggest_recovery`, чтобы сформулировать план восстановления.
+- **Security layer** — перед действиями, которые классифицируются как потенциально рискованные (в `/core/safety.py`), оркестратор требует `confirm_gate`. Даже если стратег пропустил intent для `confirm_gate`, сейчас оркестратор подставляет «User confirmation required to continue» и открывает диалог.
+
+### Выбор инструментов
+
+В ТЗ предлагалось самому определиться с технологиями — я остановился на Playwright + Python, потому что они дают доступ к headful-режиму и удобную работу с локаторами, а также на OpenAI как на доступном LLM-провайдере. Структура промптов и инструментов построена на простых JSON-схемах, что упростило отладку.
+
+### Работа с динамикой
+
+Чтобы справляться с динамическими страницами, пришлось заложить несколько эвристик:  
+- `Navigator` учитывает role, текст, размер и расположение элемента.  
+- `HeuristicStore` сохраняет удачные локаторы (например, `data-qa` на hh.ru).  
+- `Reader` подсвечивает элементы на скриншоте и сохраняет DOM diff, чтобы стратег видел, что именно изменилось после клика.
+
+### Почему результат не идеален
+
+ТЗ подразумевает полностью автономного агента, и я шел к этому, но упёрся в пару проблем: вариативность вёрстки и нестабильность LLM. Агент уже умеет проходить несколько шагов, запоминать состояние и просить о подтверждении, но иногда застревает на неочевидных элементах или повторяет действия. Это честно отражено в разделе «Ограничения и наблюдения»: без дополнительного слоя статистических эвристик или мультимодальной модели система может залипнуть.  
+
+Тем не менее основной каркас — headful-браузер, управление задачами, автоматическое планирование, контроль токенов, подтверждение перед риском, артефактная база — соответствует заявленным требованиям. Осталось довести до ума устойчивость и расширить библиотеку «антипаттернов», с которыми агент умеет бороться.
