@@ -190,7 +190,7 @@ class FakeStrategy:
         if context:
             context.consume_tokens(3)
         self.calls += 1
-        if self.calls <= 6:
+        if self.calls == 1:
             return Action(type="confirm_gate", params={"intent": "submit form"}), "Requesting confirmation"
         return Action(type="extract", params={"locator": "main"}), "Extracting results [step-complete]"
 
