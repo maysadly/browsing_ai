@@ -8,6 +8,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 from urllib.parse import quote_plus, urlparse
 
 from loguru import logger
+from pydantic import ValidationError
 
 from autobrowser.core.schemas import (
     Action,
@@ -66,6 +67,7 @@ class StrategyAgent:
         self._plan_prompt = registry.load("planner.system.txt")
         self._recovery_prompt = registry.load("critic.system.txt")
         self._report_prompt = registry.load("writer.system.txt")
+        self._review_prompt = registry.load("reviewer.system.txt")
         self._missing_action_prompt = (
             "You are fixing a planner output that omitted a tool call. "
             "Return exactly one JSON object with keys `type` and `params` suitable for dispatching to browser tools. "
@@ -156,9 +158,76 @@ class StrategyAgent:
             history=len(short_history),
             rag=len(rag_snippets),
         )
+        action, planner_note = self._run_planner_dialogue(
+            task,
+            page_state,
+            short_history,
+            rag_snippets,
+            plan_step=plan_step,
+            failure_count=failure_count,
+            failure_reason=failure_reason,
+            user_inputs=user_inputs,
+            context=context,
+            workflow_state=workflow_state,
+            planner_payload=content,
+        )
+
+        review_comment, revised_action, approved = self._review_action(
+            task,
+            page_state,
+            action,
+            planner_note,
+            plan_step=plan_step,
+            context=context,
+        )
+
+        final_action = revised_action or action
+        combined_note = self._merge_notes(planner_note, review_comment, approved)
+
+        logger.info(
+            "Strategy: multi-agent dialogue",
+            task_id=task.id,
+            planner_note=planner_note,
+            reviewer_comment=review_comment,
+            reviewer_approved=approved,
+            action=final_action.type,
+        )
+
+        final_action = self._postprocess_action(
+            task,
+            final_action,
+            page_state,
+            short_history,
+            rag_snippets,
+            plan_step=plan_step,
+            failure_count=failure_count,
+            failure_reason=failure_reason,
+            user_inputs=user_inputs,
+            context=context,
+            workflow_state=workflow_state,
+        )
+        return final_action, combined_note
+
+    # ------------------------------------------------------------------ recovery / reporting
+
+    def _run_planner_dialogue(
+        self,
+        task: Task,
+        page_state: PageStatePack,
+        short_history: List[str],
+        rag_snippets: List[str],
+        *,
+        plan_step: Optional[str],
+        failure_count: int,
+        failure_reason: Optional[str],
+        user_inputs: Optional[Dict[str, Any]],
+        context: Optional[TaskContext],
+        workflow_state: WorkflowState,
+        planner_payload: str,
+    ) -> Tuple[Action, str]:
         response = self._llm.chat(
             system=self._plan_prompt,
-            messages=[{"role": "user", "content": content}],
+            messages=[{"role": "user", "content": planner_payload}],
             tools=[self._browser_action_tool_schema()],
             temperature=0.1,
         )
@@ -191,23 +260,69 @@ class StrategyAgent:
         payload = json.loads(arguments)
         action = Action(type=payload["type"], params=payload.get("params", {}))
         logger.info("Strategy: action selected", task_id=task.id, action=action.type, note=note)
-
-        action = self._postprocess_action(
-            task,
-            action,
-            page_state,
-            short_history,
-            rag_snippets,
-            plan_step=plan_step,
-            failure_count=failure_count,
-            failure_reason=failure_reason,
-            user_inputs=user_inputs,
-            context=context,
-            workflow_state=workflow_state,
-        )
         return action, note
 
-    # ------------------------------------------------------------------ recovery / reporting
+    def _review_action(
+        self,
+        task: Task,
+        page_state: PageStatePack,
+        action: Action,
+        planner_note: str,
+        *,
+        plan_step: Optional[str],
+        context: Optional[TaskContext],
+    ) -> Tuple[str, Optional[Action], bool]:
+        payload: Dict[str, Any] = {
+            "goal": task.goal,
+            "current_url": page_state.url,
+            "page_title": page_state.title,
+            "action": action.model_dump(),
+            "planner_note": planner_note,
+        }
+        if plan_step:
+            payload["plan_step"] = plan_step
+        message = json.dumps(payload, ensure_ascii=False)
+        self._consume_tokens(context, message)
+
+        response = self._llm.chat(
+            system=self._review_prompt,
+            messages=[{"role": "user", "content": message}],
+            temperature=0.1,
+        )
+        reviewer_message = response["choices"][0]["message"].get("content", "") or ""
+        comment, revision, approved = self._parse_reviewer_response(reviewer_message)
+        return comment, revision, approved
+
+    def _parse_reviewer_response(self, raw_message: str) -> Tuple[str, Optional[Action], bool]:
+        try:
+            data = json.loads(raw_message)
+        except json.JSONDecodeError:
+            logger.debug("Strategy: reviewer response was not JSON", message=raw_message)
+            return raw_message.strip(), None, False
+
+        comment = str(data.get("comment") or "").strip()
+        approved = bool(data.get("approval", False))
+        revision_payload = data.get("revision")
+        revision_action: Optional[Action] = None
+        if isinstance(revision_payload, dict):
+            action_type = revision_payload.get("type")
+            params = revision_payload.get("params")
+            if isinstance(action_type, str) and isinstance(params, dict):
+                try:
+                    revision_action = Action(type=action_type, params=params)
+                except ValidationError:
+                    logger.warning("Strategy: reviewer proposed invalid revision", revision=revision_payload)
+
+        return comment or raw_message.strip(), revision_action, approved
+
+    def _merge_notes(self, planner_note: str, reviewer_comment: str, approved: bool) -> str:
+        sections: List[str] = []
+        if planner_note and planner_note.strip():
+            sections.append(planner_note.strip())
+        if reviewer_comment and reviewer_comment.strip():
+            prefix = "[reviewer-ok]" if approved else "[reviewer]"
+            sections.append(f"{prefix} {reviewer_comment.strip()}")
+        return "\n".join(sections)
 
     def suggest_recovery(
         self,
