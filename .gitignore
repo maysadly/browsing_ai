@@ -1,7 +1,0 @@
-*/.env
-*/Dockerfile
-**/__pycache__/
-*/artifacts/
-*/sessions/
-*/.venv/
-**/storage/
