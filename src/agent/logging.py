@@ -31,7 +31,7 @@ class ORJSONFormatter(logging.Formatter):
                 payload[key] = value
         if record.exc_info:
             payload["error"] = self.formatException(record.exc_info)
-        return orjson.dumps(payload).decode()
+        return orjson.dumps(payload, default=str).decode()
 
 
 def setup_logging(log_level: str = "INFO", log_file: Path | None = None) -> None:

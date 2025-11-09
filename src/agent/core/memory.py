@@ -21,7 +21,9 @@ class AgentMemory:
     def add(self, observation: Observation, action: Action) -> None:
         item = MemoryItem(
             observation_summary=observation.summary(),
-            action_summary=f"{action.type} selector={action.selector} url={action.url}",
+            action_summary=(
+                f"{action.type} reason={action.reason} selector={action.selector} url={action.url}"
+            ),
         )
         self.items.append(item)
         if len(self.items) > self.max_items:

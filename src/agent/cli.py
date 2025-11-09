@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import sys
+from pathlib import Path
 from typing import Optional
 
 import typer
@@ -17,6 +19,8 @@ app = typer.Typer(no_args_is_help=True)
 
 
 def main() -> None:
+    if len(sys.argv) > 1 and sys.argv[1] == "run":
+        del sys.argv[1]
     app()
 
 
@@ -31,6 +35,10 @@ def run(
     timeout: Optional[int] = typer.Option(None, help="Override for run timeout (seconds)"),
     allow_js_eval: bool = typer.Option(False, help="Allow JavaScript evaluation"),
     allow_file_upload: bool = typer.Option(False, help="Allow file upload actions"),
+    browser_profile_dir: Optional[Path] = typer.Option(
+        None,
+        help="Directory to store a persistent browser profile (reuse cookies and sessions)",
+    ),
 ) -> None:
     settings = Settings.from_env()
     if provider:
@@ -43,6 +51,8 @@ def run(
         settings.run_timeout_s = timeout
     settings.allow_js_eval = allow_js_eval
     settings.allow_file_upload = allow_file_upload
+    if browser_profile_dir is not None:
+        settings.browser_profile_dir = browser_profile_dir.expanduser()
     settings.ensure_directories()
     setup_logging(settings.log_level, settings.log_dir / "agent.log")
 
@@ -85,6 +95,16 @@ async def _run(task: str, start_url: Optional[str], settings: Settings, headless
     if result.error:
         typer.echo(f"Error: {result.error}")
     typer.echo(f"Steps executed: {result.total_steps()}")
+
+    if result.steps:
+        typer.echo("Step details:")
+        for step in result.steps:
+            typer.echo(
+                f"  #{step.step_index} {step.action.type} – {step.action.reason}"
+            )
+            typer.echo(f"     Result: {step.result_summary}")
+            if step.action.selector:
+                typer.echo(f"     Selector: {step.action.selector}")
 
     if hasattr(llm_client, "close"):
         await getattr(llm_client, "close")()

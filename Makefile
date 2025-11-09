@@ -19,7 +19,7 @@ test:
 	pytest -q
 
 run:
-	agent-cli run --task "Open example.com and report headline" --start-url "https://example.com"
+	agent-cli run --task "Open example.com and report headline" --start-url "https://google.com"
 
 server:
 	uvicorn agent.server.app:app --reload

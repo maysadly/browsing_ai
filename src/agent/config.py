@@ -37,8 +37,10 @@ class Settings:
     log_level: str = "INFO"
     log_dir: Path = Path("logs")
     runs_dir: Path = Path("runs")
+    browser_profile_dir: Path | None = None
     host: str = "0.0.0.0"
     port: int = 8000
+    allow_repeat_actions: bool = True
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -61,17 +63,27 @@ class Settings:
             allow_js_eval=_bool_env("ALLOW_JS_EVAL", False),
             allow_file_upload=_bool_env("ALLOW_FILE_UPLOAD", False),
             headless_default=_bool_env("HEADLESS_DEFAULT", True),
+            allow_repeat_actions=_bool_env("ALLOW_REPEAT_ACTIONS", True),
             log_level=os.getenv("LOG_LEVEL", "INFO"),
             log_dir=Path(os.getenv("LOG_DIR", "logs")),
             runs_dir=Path(os.getenv("RUNS_DIR", "runs")),
             host=os.getenv("HOST", "0.0.0.0"),
             port=int(os.getenv("PORT", "8000")),
         )
+
+        profile_raw = os.getenv("BROWSER_PROFILE_DIR")
+        if profile_raw is not None:
+            cleaned = profile_raw.strip()
+            settings.browser_profile_dir = Path(cleaned).expanduser() if cleaned else None
+        else:
+            settings.browser_profile_dir = settings.runs_dir / "browser_profile"
         return settings
 
     def ensure_directories(self) -> None:
         self.log_dir.mkdir(parents=True, exist_ok=True)
         self.runs_dir.mkdir(parents=True, exist_ok=True)
+        if self.browser_profile_dir is not None:
+            self.browser_profile_dir.mkdir(parents=True, exist_ok=True)
 
     def update_allowlist(self, hosts: Sequence[str]) -> None:
         cleaned = tuple(sorted({host.strip() for host in hosts if host.strip()}))

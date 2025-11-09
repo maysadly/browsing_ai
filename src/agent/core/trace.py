@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from ..types import Action, AgentStep, Observation
+from ..types import Action, AgentStep, Observation, PlanItem
 
 
 @dataclass(slots=True)
@@ -40,6 +40,12 @@ class TraceRecorder:
         path = self.step_dir(index) / "result.json"
         with path.open("w", encoding="utf-8") as file:
             json.dump(result, file, indent=2)
+        return path
+
+    def record_plan(self, plan: list[PlanItem]) -> Path:
+        path = self.root_dir / "plan.json"
+        with path.open("w", encoding="utf-8") as file:
+            json.dump([item.model_dump(mode="json") for item in plan], file, indent=2)
         return path
 
     def to_agent_step(
